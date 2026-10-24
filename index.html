@@ -37,11 +37,6 @@
   .btn.ghost { background: rgba(255,255,255,.12); }
   #help { bottom: 14px; left: 50%; transform: translateX(-50%); padding: 8px 14px; color: #dcd8d0; font-size: 12px; white-space: nowrap; }
   #help b { color: #fff; }
-  #hud { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); padding: 6px 14px; display: none; font-weight: 600; }
-  #cross { position: fixed; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: rgba(255,255,255,.85); box-shadow: 0 0 0 1px rgba(0,0,0,.4); display: none; pointer-events: none; }
-  #start { position: fixed; inset: 0; display: none; place-items: center; background: rgba(0,0,0,.35); cursor: pointer; }
-  #start div { background: var(--bg); padding: 18px 22px; border-radius: 12px; text-align: center; }
-  #start h3 { margin: 0 0 6px; }
   .lbl { font: 600 11px/1.2 -apple-system, sans-serif; color: #1d1f22; background: rgba(255,255,255,.82); padding: 2px 6px; border-radius: 4px; white-space: nowrap; pointer-events: none; }
   .lbl.new { background: rgba(224,137,47,.92); color: #fff; }
   .hs { width: 24px; height: 24px; border-radius: 50%; background: var(--acc); color: #fff; font: 700 12px/24px sans-serif; text-align: center; cursor: pointer; box-shadow: 0 0 0 3px rgba(255,255,255,.75), 0 2px 8px rgba(0,0,0,.35); }
@@ -67,16 +62,6 @@
 <div id="left" class="panel">
   <h1>Pieter Kleijnstraat 19</h1>
   <div class="sub">Rosmalen · interactive renovation model</div>
-  <div class="row">State</div>
-  <div class="seg variant" id="segVariant">
-    <button data-v="cur">Current</button>
-    <button data-v="new" class="on">Renovated</button>
-  </div>
-  <div class="row">View</div>
-  <div class="seg" id="segMode">
-    <button data-m="orbit" class="on">Dollhouse</button>
-    <button data-m="walk">Walk through</button>
-  </div>
   <div class="row">Floor</div>
   <div class="seg" id="segFloor">
     <button data-f="all">House</button>
@@ -97,15 +82,11 @@
 </div>
 
 <div id="help" class="panel"></div>
-<div id="hud" class="panel"></div>
-<div id="cross"></div>
-<div id="start"><div><h3>Click to walk</h3><b>W A S D</b> move · <b>mouse</b> look · <b>Shift</b> run<br/><b>1 2 3</b> jump to floor · <b>R</b> current/renovated · <b>Esc</b> release mouse</div></div>
 <div id="lightbox"><img alt="" /><div class="cap"></div></div>
 
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
 // ---------------------------------------------------------------- constants
@@ -276,6 +257,7 @@ const colliders = [];    // { box: Box3, obj }
 const surfaces = [];     // walkable: { x1, x2, z1, z2, h(x, z) }
 const labels = [];
 function add(obj, level, variant = 'both', kind = 'struct', collide = false) {
+  if (variant === 'cur') return obj;
   obj.userData = { level, variant, kind };
   obj.traverse((o) => { if (o.isMesh) { o.castShadow = o.material !== M.glass && kind !== 'neighbor'; o.receiveShadow = true; } });
   scene.add(obj); reg.push(obj);
@@ -970,7 +952,7 @@ const ROOMS = [
 ];
 for (const r of ROOMS) {
   if (!r.at) continue;
-  for (const v of ['cur', 'new']) {
+  for (const v of ['new']) {
     const name = v === 'new' && r.nn ? r.nn : r.n;
     if (v === 'cur' && r.hideCurLabel) continue;
     const el = document.createElement('div'); el.className = 'lbl' + (v === 'new' && r.nn ? ' new' : ''); el.textContent = name;
@@ -1049,110 +1031,14 @@ function setFloor(f, animate = true) {
   }
 }
 
-// ================================================================ walk mode
-const walk = new PointerLockControls(camera, document.body);
-const P = { x: 4.4, z: 12.6, feet: 0, vy: 0 };
-const keys = {};
-const R = 0.22;
-function blocked(x, z, feet) {
-  for (const c of colliders) {
-    if (!c.obj.visible) continue;
-    const b = c.box;
-    if (b.max.y < feet + 0.32 || b.min.y > feet + 1.75) continue;
-    const cx = Math.max(b.min.x, Math.min(x, b.max.x)), cz = Math.max(b.min.z, Math.min(z, b.max.z));
-    if ((x - cx) ** 2 + (z - cz) ** 2 < R * R) return true;
-  }
-  return false;
-}
-function floorAt(x, z, feet) {
-  let best = -1;
-  for (const s of surfaces) if (x >= s.x1 && x <= s.x2 && z >= s.z1 && z <= s.z2) { const h = s.h(x, z); if (h <= feet + 0.45 && h > best) best = h; }
-  return best;
-}
-function placeWalker(x, z, feet, lookAt) {
-  Object.assign(P, { x, z, feet, vy: 0 });
-  camera.position.set(x, feet + 1.62, z);
-  if (lookAt) camera.lookAt(lookAt[0], lookAt[1], lookAt[2]);
-}
-const SPAWN = {
-  g: [4.35, 9.8, 0, [4.35, 1.5, 7]],
-  f1: [3.4, Z1(4.1), F1, [1.5, F1 + 1.5, Z1(4.1)]],
-  f2: [4.2, Z1(3.9), F2, [2, F2 + 1.4, Z1(3.9)]],
-};
-function enterWalk(spawn) {
-  S.mode = 'walk'; segSet('segMode', 'm', 'walk');
-  orbit.enabled = false; applyVisibility();
-  const sp = spawn || [4.4, 12.6, 0, [4.4, 1.6, 9]];
-  placeWalker(...sp);
-  segSet('segFloor', 'f', sp[2] > F2 - 0.3 ? 'f2' : sp[2] > F1 - 0.3 ? 'f1' : 'g');
-  document.getElementById('start').style.display = 'grid';
-  updateHelp();
-}
-function exitWalk() {
-  S.mode = 'orbit'; segSet('segMode', 'm', 'orbit'); walk.unlock();
-  orbit.enabled = true; document.getElementById('start').style.display = 'none';
-  document.getElementById('hud').style.display = 'none'; document.getElementById('cross').style.display = 'none';
-  const f = P.feet > F2 - 0.3 ? 'f2' : P.feet > F1 - 0.3 ? 'f1' : 'g';
-  S.floor = f; segSet('segFloor', 'f', f); applyVisibility();
-  const t = new THREE.Vector3(P.x, FLOOR_Y[f], P.z);
-  flyTo(t.clone().add(new THREE.Vector3(-6, 10, 9)), t);
-  updateHelp();
-}
-document.getElementById('start').addEventListener('click', () => walk.lock());
-walk.addEventListener('lock', () => { for (const id of ['left', 'right']) document.getElementById(id).style.display = 'none'; document.getElementById('start').style.display = 'none'; document.getElementById('cross').style.display = 'block'; document.getElementById('hud').style.display = 'block'; });
-walk.addEventListener('unlock', () => { for (const id of ['left', 'right']) document.getElementById(id).style.display = ''; if (S.mode === 'walk') document.getElementById('start').style.display = 'grid'; document.getElementById('cross').style.display = 'none'; });
-
 addEventListener('keydown', (e) => {
-  keys[e.code] = true;
-  if (e.code === 'KeyR') toggleVariant();
-  if (S.mode === 'walk' && ['Digit1', 'Digit2', 'Digit3'].includes(e.code)) { const f = { Digit1: 'g', Digit2: 'f1', Digit3: 'f2' }[e.code]; placeWalker(...SPAWN[f]); segSet('segFloor', 'f', f); }
-  if (S.mode === 'orbit' && ['Digit1', 'Digit2', 'Digit3', 'Digit0'].includes(e.code)) setFloor({ Digit0: 'all', Digit1: 'g', Digit2: 'f1', Digit3: 'f2' }[e.code]);
+  if (['Digit1', 'Digit2', 'Digit3', 'Digit0'].includes(e.code)) setFloor({ Digit0: 'all', Digit1: 'g', Digit2: 'f1', Digit3: 'f2' }[e.code]);
 });
-addEventListener('keyup', (e) => { keys[e.code] = false; });
-
-function roomAt(x, z, feet) {
-  const l = feet > F2 - 0.3 ? 'f2' : feet > F1 - 0.3 ? 'f1' : 'g';
-  const r = ROOMS.find((r) => r.l === l && x >= r.x[0] && x <= r.x[1] && z >= r.z[0] && z <= r.z[1]);
-  const floorName = { g: 'Gelijkvloers', f1: 'Verdieping 1', f2: 'Zolder' }[l];
-  return `${floorName} · ${r ? (S.variant === 'new' && r.nn ? r.nn : r.n) : '—'}`;
-}
-const fwd = new THREE.Vector3(), rgt = new THREE.Vector3();
-function updateWalk(dt) {
-  if (walk.isLocked) {
-    const sp = (keys.ShiftLeft || keys.ShiftRight ? 3.0 : 1.4) * dt;
-    camera.getWorldDirection(fwd); fwd.y = 0; fwd.normalize(); rgt.crossVectors(fwd, camera.up).normalize();
-    let mx = 0, mz = 0;
-    if (keys.KeyW || keys.ArrowUp) { mx += fwd.x; mz += fwd.z; }
-    if (keys.KeyS || keys.ArrowDown) { mx -= fwd.x; mz -= fwd.z; }
-    if (keys.KeyD || keys.ArrowRight) { mx += rgt.x; mz += rgt.z; }
-    if (keys.KeyA || keys.ArrowLeft) { mx -= rgt.x; mz -= rgt.z; }
-    const len = Math.hypot(mx, mz);
-    if (len > 0) {
-      mx = mx / len * sp; mz = mz / len * sp;
-      if (!blocked(P.x + mx, P.z, P.feet)) P.x += mx;
-      if (!blocked(P.x, P.z + mz, P.feet)) P.z += mz;
-    }
-  }
-  const g = floorAt(P.x, P.z, P.feet);
-  if (g >= P.feet - 0.03) { P.feet = g; P.vy = 0; }
-  else { P.vy -= 9.8 * dt; P.feet = Math.max(g, P.feet + P.vy * dt); }
-  camera.position.set(P.x, P.feet + 1.62, P.z);
-  document.getElementById('hud').textContent = roomAt(P.x, P.z, P.feet);
-}
 
 // ================================================================ UI
 function segSet(id, key, val) { for (const b of document.querySelectorAll(`#${id} button`)) b.classList.toggle('on', b.dataset[key] === val); }
-function toggleVariant(v) {
-  S.variant = v || (S.variant === 'new' ? 'cur' : 'new'); segSet('segVariant', 'v', S.variant); applyPalette(); applyVisibility();
-}
-document.getElementById('segVariant').addEventListener('click', (e) => { if (e.target.dataset.v) toggleVariant(e.target.dataset.v); });
-document.getElementById('segMode').addEventListener('click', (e) => {
-  const m = e.target.dataset.m; if (!m || m === S.mode) return;
-  if (m === 'walk') enterWalk(); else exitWalk();
-});
 document.getElementById('segFloor').addEventListener('click', (e) => {
   const f = e.target.dataset.f; if (!f) return;
-  if (S.mode === 'walk') { if (f !== 'all') { placeWalker(...SPAWN[f]); segSet('segFloor', 'f', f); } return; }
   setFloor(f);
 });
 document.getElementById('chkFurn').addEventListener('change', (e) => { S.furn = e.target.checked; applyVisibility(); });
@@ -1181,14 +1067,8 @@ function selectItem(i, fly = false) {
   card.innerHTML = `<h3>${i + 1}. ${it.t}</h3><p>${it.d}</p>
     ${it.todo.length ? `<ul>${it.todo.map((t) => `<li>${t}</li>`).join('')}</ul>` : ''}
     ${it.q.length ? `<ul class="q">${it.q.map((t) => `<li>${t}</li>`).join('')}</ul>` : ''}
-    <div class="thumbs">${it.photos.map((p) => `<img src="photos/foto-${String(p).padStart(2, '0')}.jpg" data-p="${p}" alt="foto ${p}" />`).join('')}</div>
-    <button class="btn" id="bWalk">Walk here</button><button class="btn ghost" id="bCmp">Compare: ${S.variant === 'new' ? 'show current' : 'show renovated'}</button>`;
+    <div class="thumbs">${it.photos.map((p) => `<img src="photos/foto-${String(p).padStart(2, '0')}.jpg" data-p="${p}" alt="foto ${p}" />`).join('')}</div>`;
   card.querySelectorAll('img').forEach((im) => im.addEventListener('click', () => openLightbox(im.src, `Listing photo ${im.dataset.p}`)));
-  card.querySelector('#bWalk').addEventListener('click', () => {
-    const fy = { g: 0, f1: F1, f2: F2 }[it.l];
-    enterWalk([it.walk[0], it.walk[1], fy, it.at]);
-  });
-  card.querySelector('#bCmp').addEventListener('click', () => { toggleVariant(); selectItem(i); });
   if (fly && S.mode === 'orbit') {
     S.floor = it.l; segSet('segFloor', 'f', it.l); applyVisibility();
     const t = new THREE.Vector3(...it.at);
@@ -1197,9 +1077,7 @@ function selectItem(i, fly = false) {
 }
 
 function updateHelp() {
-  document.getElementById('help').innerHTML = S.mode === 'orbit'
-    ? '<b>Drag</b> rotate · <b>right-drag</b> pan · <b>scroll</b> zoom · <b>0–3</b> floors · <b>R</b> current ⇄ renovated · click a numbered marker for details'
-    : '<b>WASD</b> move · <b>mouse</b> look · <b>Shift</b> run · <b>1 2 3</b> floors · <b>R</b> current ⇄ renovated · <b>Esc</b> then Dollhouse to leave · stairs are walkable';
+  document.getElementById('help').innerHTML = '<b>Drag</b> rotate · <b>right-drag</b> pan · <b>scroll</b> zoom · <b>0–3</b> floors · click a numbered marker for details';
 }
 
 // ================================================================ loop
@@ -1215,7 +1093,7 @@ function tick() {
     camera.position.lerpVectors(fly.p0, fly.p1, e); orbit.target.lerpVectors(fly.t0, fly.t1, e);
     if (k >= 1) fly = null;
   }
-  if (S.mode === 'orbit') orbit.update(); else updateWalk(dt);
+  orbit.update();
   renderer.render(scene, camera); labelRenderer.render(scene, camera);
   requestAnimationFrame(tick);
 }
@@ -1223,7 +1101,7 @@ applyPalette(); applyVisibility(); updateHelp();
 document.getElementById('loading').remove();
 setFloor('g', false);
 camera.position.set(-6.5, 12.5, 15.5); orbit.target.set(3, 0.5, 5.5);
-window.__S = S; window.__api = { blocked, floorAt, setFloor, toggleVariant, enterWalk, exitWalk, selectItem, placeWalker, camera, orbit, P };
+window.__S = S; window.__api = { setFloor, selectItem, camera, orbit };
 tick();
 </script>
 </body>
