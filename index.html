@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Pieter Kleijnstraat 19 — 3D renovation</title>
 <style>
   :root { --bg: rgba(22, 24, 28, 0.86); --fg: #f2efe9; --mut: #a9a59c; --acc: #e0892f; --acc2: #4fa3a5; }
@@ -46,6 +46,37 @@
   #lightbox .cap { position: fixed; bottom: 18px; left: 0; right: 0; text-align: center; color: #ddd; }
   #plans { display: flex; flex-wrap: wrap; gap: 6px; }
   #plans a { color: var(--fg); background: rgba(255,255,255,.1); padding: 4px 8px; border-radius: 6px; text-decoration: none; font-size: 12px; cursor: pointer; }
+
+  .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .mbtn, .chev { display: none; }
+  @media (max-width: 760px), (pointer: coarse) and (max-height: 520px) {
+    html, body { font-size: 13px; }
+    .panel { border-radius: 14px; }
+    #left { top: calc(8px + env(safe-area-inset-top)); left: 8px; right: 8px; width: auto; padding: 10px 12px; }
+    #left h1 { font-size: 14px; }
+    #left .sub { margin-bottom: 6px; font-size: 11px; }
+    #left .row { display: none; }
+    #left #extra .row { display: block; }
+    .seg button { padding: 9px 4px; }
+    .mbtn { display: block; border: 0; background: rgba(255,255,255,.12); color: var(--fg); width: 34px; height: 30px; border-radius: 8px; font-size: 18px; line-height: 1; cursor: pointer; }
+    #extra { display: none; }
+    #left.open #extra { display: block; }
+    #right { top: auto; bottom: calc(8px + env(safe-area-inset-bottom)); left: 8px; right: 8px; width: auto; max-height: 46vh; padding: 10px 12px; }
+    #right.card #list { display: none; }
+    #right.card #card { margin-top: 4px; border-top: 0; padding-top: 0; }
+    #right h2 { margin: 0; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+    .chev { display: inline; transition: transform .2s; }
+    #right:not(.open) #list, #right:not(.open) #card { display: none !important; }
+    #right.open h2 { margin-bottom: 6px; }
+    #right.open .chev { transform: rotate(180deg); }
+    #list { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+    .item { padding: 6px 4px; }
+    .item .f { display: none; }
+    .thumbs { grid-template-columns: repeat(4, 1fr); }
+    #help { display: none; }
+    .hs { width: 30px; height: 30px; line-height: 30px; font-size: 13px; }
+    .lbl { font-size: 10px; }
+  }
   #loading { position: fixed; inset: 0; display: grid; place-items: center; color: #333; font-size: 15px; }
 </style>
 <script type="importmap">
@@ -60,8 +91,8 @@
 <div id="app"></div>
 
 <div id="left" class="panel">
-  <h1>Pieter Kleijnstraat 19</h1>
-  <div class="sub">Rosmalen · interactive renovation model</div>
+  <div class="head"><div><h1>Pieter Kleijnstraat 19</h1>
+  <div class="sub">Rosmalen · interactive renovation model</div></div><button class="mbtn" id="bMore" aria-label="More options">⋯</button></div>
   <div class="row">Floor</div>
   <div class="seg" id="segFloor">
     <button data-f="all">House</button>
@@ -69,14 +100,16 @@
     <button data-f="f1">1st</button>
     <button data-f="f2">Attic</button>
   </div>
+  <div id="extra">
   <label class="chk"><input type="checkbox" id="chkFurn" checked /> Furniture</label>
   <label class="chk"><input type="checkbox" id="chkLabels" checked /> Room labels</label>
   <div class="row">Plans (from Notion)</div>
   <div id="plans"></div>
+  </div>
 </div>
 
 <div id="right" class="panel">
-  <h2>Renovation works</h2>
+  <h2 id="worksHead">Renovation works <span class="chev">▴</span></h2>
   <div id="list"></div>
   <div id="card"></div>
 </div>
@@ -101,7 +134,7 @@ const S = { variant: 'new', floor: 'g', mode: 'orbit', furn: true, labels: true 
 // ---------------------------------------------------------------- renderer / scene
 const app = document.getElementById('app');
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, matchMedia('(pointer: coarse)').matches ? 1.5 : 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -125,7 +158,8 @@ const sun = new THREE.DirectionalLight(0xfff1dc, 2.2);
 sun.position.set(-12, 22, -8);
 sun.target.position.set(3, 0, 5);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+const MOBILE = matchMedia('(max-width: 760px), (pointer: coarse)').matches;
+sun.shadow.mapSize.set(MOBILE ? 1024 : 2048, MOBILE ? 1024 : 2048);
 Object.assign(sun.shadow.camera, { left: -16, right: 16, top: 16, bottom: -16, near: 1, far: 70 });
 sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.02;
@@ -1064,6 +1098,7 @@ function selectItem(i, fly = false) {
   selected = i; const it = ITEMS[i];
   for (const el of list.querySelectorAll('.item')) el.classList.toggle('on', +el.dataset.i === i);
   card.style.display = 'block';
+  if (MOBILE) { const rp = document.getElementById('right'); rp.classList.add('open', 'card'); rp.scrollTop = 0; document.getElementById('worksHead').firstChild.textContent = '← All works '; updateViewOffset(); }
   card.innerHTML = `<h3>${i + 1}. ${it.t}</h3><p>${it.d}</p>
     ${it.todo.length ? `<ul>${it.todo.map((t) => `<li>${t}</li>`).join('')}</ul>` : ''}
     ${it.q.length ? `<ul class="q">${it.q.map((t) => `<li>${t}</li>`).join('')}</ul>` : ''}
@@ -1076,13 +1111,28 @@ function selectItem(i, fly = false) {
   }
 }
 
+document.getElementById('bMore').addEventListener('click', () => document.getElementById('left').classList.toggle('open'));
+document.getElementById('worksHead').addEventListener('click', () => {
+  const rp = document.getElementById('right');
+  if (rp.classList.contains('card')) rp.classList.remove('card'); else rp.classList.toggle('open');
+  document.getElementById('worksHead').firstChild.textContent = 'Renovation works ';
+  updateViewOffset();
+});
+// On phones the works sheet covers the bottom of the screen: shift the rendered view up so the model stays visible.
+function updateViewOffset() {
+  const rp = document.getElementById('right');
+  requestAnimationFrame(() => {
+    if (MOBILE && rp.classList.contains('open')) camera.setViewOffset(innerWidth, innerHeight, 0, rp.offsetHeight * 0.5, innerWidth, innerHeight);
+    else camera.clearViewOffset();
+  });
+}
 function updateHelp() {
   document.getElementById('help').innerHTML = '<b>Drag</b> rotate · <b>right-drag</b> pan · <b>scroll</b> zoom · <b>0–3</b> floors · click a numbered marker for details';
 }
 
 // ================================================================ loop
 addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); updateViewOffset();
   renderer.setSize(innerWidth, innerHeight); labelRenderer.setSize(innerWidth, innerHeight);
 });
 const clock = new THREE.Clock();
@@ -1101,6 +1151,7 @@ applyPalette(); applyVisibility(); updateHelp();
 document.getElementById('loading').remove();
 setFloor('g', false);
 camera.position.set(-6.5, 12.5, 15.5); orbit.target.set(3, 0.5, 5.5);
+if (innerWidth / innerHeight < 0.9) { camera.fov = 65; camera.updateProjectionMatrix(); camera.position.set(-5, 20, 17); }
 window.__S = S; window.__api = { setFloor, selectItem, camera, orbit };
 tick();
 </script>
