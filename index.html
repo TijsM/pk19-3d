@@ -103,6 +103,7 @@
   <div id="extra">
   <label class="chk"><input type="checkbox" id="chkFurn" checked /> Furniture</label>
   <label class="chk"><input type="checkbox" id="chkLabels" checked /> Room labels</label>
+  <label class="chk"><input type="checkbox" id="chkWorks" checked /> Renovation works &amp; markers</label>
   <div class="row">Plans (from Notion)</div>
   <div id="plans"></div>
   </div>
@@ -129,7 +130,7 @@ import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer
 const GH = 2.6, F1 = 2.9, F1H = 2.6, F2 = 5.8, F2H = 2.45, OFF = 3.27;
 const Z1 = (z) => z + OFF;
 
-const S = { variant: 'new', floor: 'g', mode: 'orbit', furn: true, labels: true };
+const S = { variant: 'new', floor: 'g', mode: 'orbit', furn: true, labels: true, works: true };
 
 // ---------------------------------------------------------------- renderer / scene
 const app = document.getElementById('app');
@@ -258,8 +259,7 @@ const M = {
   bedLinen: std(0xf3efe7, { roughness: 1 }), duvetRose: std(0xc9a08a, { roughness: 1 }), duvetGrey: std(0x76797e, { roughness: 1 }), bedFrame: std(0x2e2f33),
   leather: std(0xb07a4f, { roughness: 0.7 }), metalBlack: std(0x2a2a2c, { metalness: 0.5, roughness: 0.5 }),
   porcelain: std(0xfafafa, { roughness: 0.25 }), redWall: std(0xb3253f), wineFridge: std(0x1a1d22, { roughness: 0.15, metalness: 0.3 }),
-  plant: std(0x4f7a3e), pot: std(0xcfc5b6), grass: std(0x6c9650), paving: std(0xb8b2a7), street: std(0x77787a), fence: std(0x2f2a27), shed: std(0x34302c),
-  neighbor: new THREE.MeshStandardMaterial({ color: 0xe8e4dc, transparent: true, opacity: 0.35, depthWrite: false }),
+  plant: std(0x4f7a3e), pot: std(0xcfc5b6), grass: std(0x6c9650), paving: std(0xb8b2a7), fence: std(0x2f2a27), shed: std(0x34302c),
   hearth: std(0x26272a), pax: std(0xf6f5f1, { roughness: 0.6 }), door: std(0xfbfbf8, { roughness: 0.55 }),
 };
 const floorMat = (tex, w, d, scale = 1.2) => texMat(tex, w / scale, d / scale);
@@ -293,7 +293,7 @@ const labels = [];
 function add(obj, level, variant = 'both', kind = 'struct', collide = false) {
   if (variant === 'cur') return obj;
   obj.userData = { level, variant, kind };
-  obj.traverse((o) => { if (o.isMesh) { o.castShadow = o.material !== M.glass && kind !== 'neighbor'; o.receiveShadow = true; } });
+  obj.traverse((o) => { if (o.isMesh) { o.castShadow = o.material !== M.glass; o.receiveShadow = true; } });
   scene.add(obj); reg.push(obj);
   if (collide) { obj.updateMatrixWorld(true); colliders.push({ box: new THREE.Box3().setFromObject(obj), obj }); }
   return obj;
@@ -615,24 +615,37 @@ function rug(x1, x2, z1, z2, y0, color, level, variant) { furn(x1, x2, y0 + .002
   radiator(0.6, 2.5, 0.02, 0.1, 0.12, 0.5, L, 'cur');
   radiator(0.22, 0.3, 1.0, 2.2, 0.15, 0.75, L, 'new');
 
-  // island 180 × 100, 120 cm from the garden wall, 95 cm walkway to the kitchen run
-  // olive beadboard island with oak top, wine fridge at the seating end
-  furn(3.36, 4.3, 0, 0.88, 1.25, 2.95, texMat(beadTex, 4, 1), L, 'new');
-  furn(3.335, 3.36, 0.03, 0.84, 2.38, 2.92, M.wineFridge, L, 'new', false);
-  for (const [a, b, c, d] of [[0.03, 0.06, 2.38, 2.92], [0.81, 0.84, 2.38, 2.92], [0.03, 0.84, 2.38, 2.41], [0.03, 0.84, 2.89, 2.92]]) furn(3.33, 3.36, a, b, c, d, M.steel, L, 'new', false);
-  for (let i = 1; i < 5; i++) furn(3.338, 3.36, 0.06 + i * 0.15, 0.075 + i * 0.15, 2.42, 2.88, M.oakTop, L, 'new', false);
-  furn(3.28, 4.34, 0.88, 0.93, 1.18, 3.02, M.oakTop, L, 'new');
-  for (const z of [1.5, 2.05]) group(L, 'new', false, (g) => {
-    gcyl(g, 0.19, 0.17, 0.05, 0, 0.72, 0, M.oakTop);
-    for (const [x, zz] of [[-.13, -.13], [.13, -.13], [-.13, .13], [.13, .13]]) { const l = gbox(g, 0.025, 0.72, 0.025, x * 1.15, 0.36, zz * 1.15, M.metalBlack); l.rotation.set(zz * 0.4, 0, -x * 0.4); }
-    gbox(g, 0.3, 0.02, 0.02, 0, 0.26, 0.15, M.metalBlack); g.position.set(3.0, 0, z);
+  // island per Keuken Kampioen order 20210005875 (Steinhaus Scala Rokon, T288 olive fronts, 1943H walnut worktop):
+  // top 1854 × 800 × 40 mm at 92 cm against the steunzuil, centred on it (zuil x 3.54–4.20); along it from the zuil: 16 panel, 1200 two-door base unit, 16, 600 section, 16.
+  // Kitchen side (+x): doors and open shelves. Seating side (-x): 289 mm knee overhang and the 60 cm wine fridge at the free end.
+  const IX1 = 3.47, IX2 = 4.27, IZ1 = 1.186, IZ2 = 3.04, IC = (IX1 + IX2) / 2;
+  const olive = std(0x535c3a, { roughness: 0.75 }), oliveDark = std(0x2f3522, { roughness: 0.9 });
+  furn(IX1, IX2, 0.88, 0.92, IZ1, IZ2, M.oakTop, L, 'new');                                   // worktop
+  for (const z of [IZ1, 1.802, IZ2 - 0.022]) furn(IX1 + 0.005, IX2 - 0.005, 0, 0.88, z, z + 0.016, olive, L, 'new');   // full-depth side panels to the floor
+  furn(3.76, 4.23, 0.1, 0.88, 1.818, IZ2 - 0.022, olive, L, 'new');                           // 1200 base unit carcass
+  furn(3.78, 4.22, 0, 0.1, 1.818, IZ2 - 0.022, oliveDark, L, 'new', false);                  // recessed plinth
+  for (const [z1, z2] of [[1.82, 2.418], [2.422, 3.016]]) furn(4.23, 4.25, 0.1, 0.88, z1, z2, olive, L, 'new', false);   // two flat doors
+  for (const [y1, y2, z1, z2] of [[0.1, 0.875, 2.416, 2.424], [0.866, 0.875, 1.818, IZ2 - 0.022]]) furn(4.25, 4.253, y1, y2, z1, z2, M.black, L, 'new', false);   // door seams
+  furn(4.06, 4.076, 0.1, 0.88, 1.818 - 0.6, 1.802, olive, L, 'new', false);                   // back of the open shelf niche
+  for (const y of [0.1, 0.28, 0.54, 0.79]) furn(4.076, IX2 - 0.005, y, y + 0.025, 1.202, 1.802, olive, L, 'new', false);   // 24 cm shelves
+  for (const [y, z, h, c] of [[0.305, 1.3, 0.2, 0xe8dccb], [0.305, 1.48, 0.14, 0x8a5a3a], [0.565, 1.28, 0.18, 0x7a4f35], [0.565, 1.33, 0.17, 0xd8cbb3], [0.565, 1.6, 0.12, 0xe9e1d3], [0.125, 1.45, 0.12, 0x6f6a5e]])
+    furn(4.11, 4.22, y, y + h, z, z + 0.05 + (h > 0.15 ? 0 : 0.1), std(c), L, 'new', false);
+  furn(3.485, 4.06, 0.04, 0.86, 1.205, 1.8, M.wineFridge, L, 'new', false);                  // Inventum IKW0822D, 595 × 820 × 578
+  for (const [a, b, c, d] of [[0.04, 0.07, 1.205, 1.8], [0.83, 0.86, 1.205, 1.8], [0.04, 0.86, 1.205, 1.235], [0.04, 0.86, 1.77, 1.8]]) furn(3.48, 3.485, a, b, c, d, M.steel, L, 'new', false);
+  for (let i = 1; i < 6; i++) furn(3.49, 3.51, 0.07 + i * 0.125, 0.085 + i * 0.125, 1.24, 1.765, M.oakTop, L, 'new', false);
+  furn(3.472, 3.48, 0.15, 0.75, 1.77, 1.785, M.steel, L, 'new', false);                      // handle
+  furn(3.75, 3.76, 0.1, 0.88, 1.818, IZ2 - 0.022, olive, L, 'new', false);                    // clad back under the overhang
+  for (const z of [2.12, 2.72]) group(L, 'new', false, (g) => {
+    gcyl(g, 0.19, 0.17, 0.05, 0, 0.66, 0, M.oakTop);
+    for (const [x, zz] of [[-.13, -.13], [.13, -.13], [-.13, .13], [.13, .13]]) { const l = gbox(g, 0.025, 0.66, 0.025, x * 1.15, 0.33, zz * 1.15, M.metalBlack); l.rotation.set(zz * 0.4, 0, -x * 0.4); }
+    gbox(g, 0.3, 0.02, 0.02, 0, 0.24, 0.15, M.metalBlack); g.position.set(3.44, 0, z);
   });
-  for (const z of [1.7, 2.5]) {   // paper lanterns
-    const m = new THREE.Mesh(new THREE.SphereGeometry(0.17, 24, 16), M.lantern); m.position.set(3.82, 1.98, z); add(m, L, 'new', 'furn');
-    box(3.815, 3.825, 2.14, GH, z - .005, z + .005, M.black, L, 'new', { kind: 'furn' });
+  for (const z of [1.65, 2.55]) {   // paper lanterns
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.17, 24, 16), M.lantern); m.position.set(IC, 1.98, z); add(m, L, 'new', 'furn');
+    box(IC - .005, IC + .005, 2.14, GH, z - .005, z + .005, M.black, L, 'new', { kind: 'furn' });
   }
-  group(L, 'new', false, (g) => { gcyl(g, 0.2, 0.2, 0.02, 0, 0.01, 0, M.black, 32); gcyl(g, 0.03, 0.03, 0.12, -0.06, 0.08, 0, M.trim); gcyl(g, 0.03, 0.03, 0.09, 0.02, 0.06, 0.05, M.trim); g.position.set(3.75, 0.93, 2.0); });
-  plant(3.8, 1.55, 0.93, 0.4, L, 'new');
+  group(L, 'new', false, (g) => { gcyl(g, 0.2, 0.2, 0.02, 0, 0.01, 0, M.black, 32); gcyl(g, 0.03, 0.03, 0.12, -0.06, 0.08, 0, M.trim); gcyl(g, 0.03, 0.03, 0.09, 0.02, 0.06, 0.05, M.trim); g.position.set(IC, 0.92, 2.2); });
+  plant(IC + 0.1, 1.5, 0.92, 0.4, L, 'new');
 
   // kitchen dining (round 4p) — both
   roundTable(1.2, 2.13, 0.55, 0, M.oakSolid, L, 'both');
@@ -939,11 +952,10 @@ function rug(x1, x2, z1, z2, y0, color, level, variant) { furn(x1, x2, y0 + .002
 // ================================================================ SITE
 {
   const L = 'site';
-  box(-30, 36, -0.12, -0.06, -30, 40, std(0xa3a79b, { roughness: 1 }), L);
+  box(-0.8, 6.8, -0.35, -0.06, -11.0, 12.5, std(0xa3a79b, { roughness: 1 }), L);       // compact base: house, garden and front path only
   box(-0.3, 6.29, -0.06, -0.02, -10.5, -0.4, M.grass, L);
   box(-0.3, 6.29, -0.055, -0.01, -3.2, -0.4, texMat(T.tileGrey, 6, 3), L);
-  box(-30, 36, -0.06, -0.02, 11.25, 13.0, texMat(T.tileGrey, 30, 2), L);
-  box(-30, 36, -0.08, -0.03, 13.0, 19.0, M.street, L);
+  box(-0.8, 6.8, -0.06, -0.02, 11.25, 12.5, texMat(T.tileGrey, 7, 1.3), L);
   for (const x of [-0.35, 6.29]) box(x, x + 0.06, 0, 1.85, -10.5, -0.4, M.fence, L, 'both', { collide: true });
   box(-0.35, 6.35, 0, 1.85, -10.56, -10.5, M.fence, L, 'both', { collide: true });
   box(2.6, 6.2, 0, 2.4, -10.4, -7.8, M.shed, L, 'both', { collide: true });              // veranda / garden house
@@ -954,11 +966,6 @@ function rug(x1, x2, z1, z2, y0, color, level, variant) { furn(x1, x2, y0 + .002
   // canopy over the front door ("overkapping")
   box(3.74, 6.29, 2.45, 2.55, 11.25, 11.96, M.trim, 'g');
   box(3.74, 3.84, 0, 2.45, 11.86, 11.96, M.trim, 'g', 'both', { collide: true });
-  // neighbours in the terrace (ghosted)
-  for (const x0 of [-6.29, 6.29]) {
-    box(x0, x0 + 6.0, 0, F2 + 2.4, 3.0, 11.25, M.neighbor, L, 'both', { kind: 'neighbor' });
-    box(x0, x0 + 6.0, 0, GH + 0.3, -0.4, 3.0, M.neighbor, L, 'both', { kind: 'neighbor' });
-  }
 }
 
 // ================================================================ rooms, labels, renovation hotspots
@@ -970,7 +977,6 @@ const ROOMS = [
   { n: 'Trap', l: 'g', x: [5.08, 5.99], z: [6.62, 9.37], at: [5.5, 1.0, 8.9] },
   { n: 'Toilet', l: 'g', x: [5.08, 5.99], z: [9.45, 10.95], at: [5.5, 1.0, 10.2] },
   { n: 'Tuin', l: 'g', x: [-0.3, 6.3], z: [-10.5, -0.4], at: [3.0, 0.6, -5] },
-  { n: 'Straat', l: 'g', x: [-30, 36], z: [11.25, 30] },
   { n: 'Slaapkamer', l: 'f1', x: [0, 3.57], z: [Z1(0), Z1(3.22)], at: [1.6, F1 + 1.4, Z1(1.6)] },
   { n: 'Slaapkamer 2', nn: 'Walk-in closet', l: 'f1', x: [3.67, 5.99], z: [Z1(0), Z1(3.22)], at: [4.8, F1 + 1.4, Z1(1.6)] },
   { n: 'Toilet + wasruimte', nn: 'Wasruimte', l: 'f1', x: [0, 2.55], z: [Z1(3.33), Z1(4.04)], at: [1.0, F1 + 1.6, Z1(3.7)] },
@@ -1005,7 +1011,7 @@ const ITEMS = [
     d: 'De verharding rond de open haard neemt te veel loopruimte in en gaat weg. In het model is ook de optie getoond om de schouw te betegelen.',
     todo: ['Verharding afbreken en afvoeren', 'Vloer herstellen of aanvullen', 'Optioneel: schouw betegelen'], q: ['Loopt de vloer eronder door, en is die beschadigd?'] },
   { t: 'Keuken & eiland', l: 'g', at: [3.82, 1.3, 2.1], walk: [2.3, 2.6], photos: [5, 6, 7],
-    d: 'Keukeneiland van ± 180 × 100 cm tegen de steunzuil, met 95 cm doorloop naar de keuken. Twee barstoelen en een klimaatkoelkast aan de eetkant, kastjes aan de keukenkant. Het wandkastje gaat weg, de spatwand wordt betegeld en keuken en eiland krijgen hetzelfde blad.',
+    d: 'Keukeneiland van Keuken Kampioen (Steinhaus Scala Rokon): 185 × 80 cm notenblad op 92 cm tegen de steunzuil, olijfgroene fronten. Aan de keukenkant een onderkast van 120 cm met twee deuren en een open vak met drie legplanken, aan de eetkant 29 cm knieruimte voor twee barkrukken en een Inventum-wijnklimaatkast van 60 cm aan de vrije kop. Gecentreerd op de zuil, ca. 97 cm doorloop naar de keuken. Het wandkastje gaat weg, de spatwand wordt betegeld en keuken en eiland krijgen hetzelfde blad.',
     todo: ['Wandkastje verwijderen', 'Vloerplanken onder het eiland uitnemen voor hergebruik', 'Eiland bouwen, klimaatkast aansluiten', 'Spatwand betegelen', 'Optioneel: één blad voor keuken en eiland'], q: ['Aansluiting vitrinekasten ↔ eiland', 'Stijl van de kastjes'] },
   { t: 'Toilet / wasruimte', l: 'f1', at: [1.0, F1 + 1.4, Z1(4.08)], walk: [3.3, Z1(4.3)], photos: [25],
     d: 'Toilet en wasruimte zijn nu één ruimte. Een tussenwand maakt een klein portaal met twee deuren: één naar de wasruimte, één naar het toilet.',
@@ -1040,12 +1046,12 @@ function applyVisibility() {
     const u = o.userData;
     let v = u.variant === 'both' || u.variant === S.variant;
     if (u.kind === 'furn' && !S.furn) v = false;
-    if (u.kind === 'neighbor' && S.mode === 'orbit' && S.floor !== 'all') v = false;
     o.visible = v && levelShown(u.level);
   }
   const onFloor = (l) => S.mode === 'orbit' && S.labels && (S.floor === 'all' ? false : l === S.floor);
   for (const o of labels) o.visible = onFloor(o.userData.level) && o.userData.variant === S.variant;
-  for (const o of hotspots) o.visible = S.mode === 'orbit' && o.userData.level === S.floor;
+  for (const o of hotspots) o.visible = S.works && S.mode === 'orbit' && o.userData.level === S.floor;
+  document.getElementById('right').style.display = S.works ? '' : 'none';
   for (const o of [...labels, ...hotspots]) o.element.style.display = o.visible ? '' : 'none';
 }
 
@@ -1077,6 +1083,7 @@ document.getElementById('segFloor').addEventListener('click', (e) => {
 });
 document.getElementById('chkFurn').addEventListener('change', (e) => { S.furn = e.target.checked; applyVisibility(); });
 document.getElementById('chkLabels').addEventListener('change', (e) => { S.labels = e.target.checked; applyVisibility(); });
+document.getElementById('chkWorks').addEventListener('change', (e) => { S.works = e.target.checked; applyVisibility(); updateViewOffset(); });
 
 const lb = document.getElementById('lightbox');
 function openLightbox(src, cap) { lb.querySelector('img').src = src; lb.querySelector('.cap').textContent = cap || ''; lb.style.display = 'grid'; }
@@ -1122,7 +1129,7 @@ document.getElementById('worksHead').addEventListener('click', () => {
 function updateViewOffset() {
   const rp = document.getElementById('right');
   requestAnimationFrame(() => {
-    if (MOBILE && rp.classList.contains('open')) camera.setViewOffset(innerWidth, innerHeight, 0, rp.offsetHeight * 0.5, innerWidth, innerHeight);
+    if (MOBILE && S.works && rp.classList.contains('open')) camera.setViewOffset(innerWidth, innerHeight, 0, rp.offsetHeight * 0.5, innerWidth, innerHeight);
     else camera.clearViewOffset();
   });
 }
